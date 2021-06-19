@@ -20,7 +20,10 @@ B5 62 06 57 08 00 01 00 00 00 20 4E 55 52 7B C3
 #include <SoftwareSerial.h>
 
 // Connect the GPS RX/TX to arduino pins 3 and 5
-SoftwareSerial serial = SoftwareSerial(10,11);
+SoftwareSerial gpsPort = SoftwareSerial(10,11);
+
+const unsigned char gpsSleepCommand[] = {0xB5, 0x62, 0x06, 0x57, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x50, 0x4F, 0x54, 0x53, 0xAC, 0x85};
+const unsigned char gpsWakeCommand[] = {0xB5, 0x62, 0x06, 0x57, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x20, 0x4E, 0x55, 0x52, 0x7B, 0xC3};
 
 const unsigned char UBX_HEADER[] = { 0xB5, 0x62 };
 
@@ -52,8 +55,8 @@ bool processGPS() {
   static unsigned char checksum[2];
   const int payloadSize = sizeof(NAV_POSLLH);
 
-  while ( serial.available() ) {
-    byte c = serial.read();
+  while ( gpsPort.available() ) {
+    byte c = gpsPort.read();
     if ( fpos < 2 ) {
       if ( c == UBX_HEADER[fpos] ){
         fpos++;
@@ -89,35 +92,48 @@ bool processGPS() {
   return false;
 }
 
-char buf[50];
+void gpsSleep(){
+  gpsPort.write(gpsSleepCommand,sizeof(gpsSleepCommand));
+}
+
+void gpsWake(){
+  gpsPort.write(gpsWakeCommand,sizeof(gpsWakeCommand));
+}
 
 void setup() 
 {
   Serial.begin(9600);
-  serial.begin(9600);
+  gpsPort.begin(9600);
   Serial.println("Awake");
 }
 
 void loop() {
   
+
+  if(Serial.available()){
+    char c = Serial.read();
+    Serial.print("Got: ");
+    Serial.println(c);
+    if(c=='s'){
+      Serial.println("Sleeping...");
+      gpsSleep();
+    }
+    if(c=='w'){
+      Serial.println("Waking...");
+      gpsWake();
+    }
+
+  }
+
+
   if ( processGPS() ) {
-    /*
-    Serial.print("iTOW:");      Serial.print(posllh.iTOW);
-    Serial.print(" lat/lon: "); Serial.print(posllh.lat/10000000.0f,8); Serial.print(","); Serial.print(posllh.lon/10000000.0f,8);
-    Serial.print(" height: ");  Serial.print(posllh.height/1000.0f);
-    Serial.print(" hMSL: ");    Serial.print(posllh.hMSL/1000.0f);
+    Serial.print("http://maps.google.com/?q=");Serial.print(posllh.lat/10000000.0f,8);Serial.print(",");Serial.print(posllh.lon/10000000.0f,8);Serial.println();
+
     Serial.print(" hAcc: ");    Serial.print(posllh.hAcc/1000.0f);
     Serial.print(" vAcc: ");    Serial.print(posllh.vAcc/1000.0f);
     Serial.println();
-    */
-    Serial.print("http://maps.google.com/?q=");Serial.print(posllh.lat/10000000.0f,8);Serial.print(",");Serial.print(posllh.lon/10000000.0f,8);Serial.println();
   }
   
-  /*
-  if(serial.available()){
-    byte c = serial.read();
-    Serial.println(c,HEX);
-  }*/
     
 
 }
