@@ -37,7 +37,7 @@ B5 62 01 02 00 00 03 0A
 
 
 // Connect the GPS RX/TX to arduino pins 3 and 5
-SoftwareSerial gpsPort = SoftwareSerial(10,11);
+SoftwareSerial gpsPort = SoftwareSerial(12,13);
 
 const unsigned char gpsConfigCommands[6][11]= {{0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x00, 0x00, 0xFA, 0x0F},
                                                {0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x01, 0x00, 0xFB, 0x11},
@@ -49,7 +49,7 @@ const unsigned char gpsSleepCommand[] = {0xB5, 0x62, 0x06, 0x57, 0x08, 0x00, 0x0
 const unsigned char gpsWakeCommand[] = {0xB5, 0x62, 0x06, 0x57, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x20, 0x4E, 0x55, 0x52, 0x7B, 0xC3};
 const unsigned char gpsPOSLLH_CMD[]={0xB5, 0x62, 0x01, 0x02, 0x00, 0x00, 0x03, 0x0A};
 const unsigned char UBX_HEADER[] = { 0xB5, 0x62 };
-int gpsConfigured,gpsMessageCounter,gpsLock,gpsPositionRequest,gpsAwake,gpsAwakeCounter;
+int gpsConfigured,gpsMessageCounter,gpsLock,gpsPositionRequest,gpsAwake,gpsAwakeCounter,gpsCommsErrorCounter;
 
 struct NAV_POSLLH {
   unsigned char cls;
@@ -159,6 +159,7 @@ void setup()
   gpsLock = 0;
   gpsPositionRequest = 0;
   gpsAwake = 1;
+  gpsCommsErrorCounter = 0;
 }
 
 void loop() {
@@ -187,10 +188,24 @@ void loop() {
       gpsWake();
 
     gpsPort.write(gpsPOSLLH_CMD,sizeof(gpsPOSLLH_CMD));
-    delay(100);
+    delay(200);
 
+  
+    if(!gpsPort.available()){
+      gpsCommsErrorCounter++;
+    }else{
+      gpsCommsErrorCounter = 0;
+    }    
 
-    if(processGPS()&&((posllh.hAcc/1000.0f <= HORIZONTAL_ACC_THRESHOLD)||(gpsMessageCounter>GPS_LOCK_MSG_LIMIT))){
+    if(gpsCommsErrorCounter>5){
+      Serial.println("GPS not responding");
+      gpsPositionRequest = 0;
+      gpsCommsErrorCounter = 0;
+      gpsMessageCounter = 0;
+
+    }
+    // Send GPS coords if accuracy is good enough, timed out or gps lock has been achieved without subsequent sleep
+    if(processGPS()&&((posllh.hAcc/1000.0f <= HORIZONTAL_ACC_THRESHOLD)||(gpsMessageCounter>GPS_LOCK_MSG_LIMIT)||(gpsLock==1))){
       gpsLock = 1;
       gpsMessageCounter = 0;
       gpsPositionRequest = 0;
