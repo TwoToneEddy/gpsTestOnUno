@@ -51,8 +51,8 @@ const unsigned char gpsSleepCommand[] = {0xB5, 0x62, 0x06, 0x57, 0x08, 0x00, 0x0
 const unsigned char gpsWakeCommand[] = {0xB5, 0x62, 0x06, 0x57, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x20, 0x4E, 0x55, 0x52, 0x7B, 0xC3};
 const unsigned char gpsPOSLLH_CMD[]={0xB5, 0x62, 0x01, 0x02, 0x00, 0x00, 0x03, 0x0A};
 const unsigned char UBX_HEADER[] = { 0xB5, 0x62 };
-int gpsConfigured,gpsMessageCounter,gpsLock,gpsPositionRequest,gpsAwake,gpsAwakeCounter,gpsCommsErrorCounter;
-int sim800Configured,sim800Comms;
+int gpsConfigured,gpsMessageCounter,gpsLock,gpsPositionRequest,gpsAwake,gpsAwakeCounter,gpsCommsErrorCounter,gpsPortActive;
+int sim800Configured,sim800Comms,sim800PortActive;
 String buffer;
 String locationMessage;
 char bufferArray[64];
@@ -154,6 +154,44 @@ void gpsConfigure(){
   gpsConfigured = 1;
 }
 
+void activateGpsPort(){
+
+  if(sim800PortActive){
+    sim800Port.end();
+    delay(100);
+    sim800PortActive = 0;
+  }
+
+  if(gpsPortActive){
+    return;
+  }else{
+    gpsPort.begin(9600);
+    delay(200);
+    gpsPort.flush();
+    gpsPortActive = 1;
+  }
+  delay(500);
+}
+
+void activateSim800Port(){
+
+  if(gpsPortActive){
+    gpsPort.end();
+    delay(100);
+    gpsPortActive = 0;
+  }
+
+  if(sim800PortActive){
+    return;
+  }else{
+    sim800Port.begin(9600);
+    delay(200);
+    sim800Port.flush();
+    sim800PortActive = 1;
+  }
+  delay(500);
+}
+
 void sim800Configure(){
   sim800Comms=0;
 
@@ -206,9 +244,9 @@ void sendSMS(String msg){
 void setup() 
 {
   Serial.begin(9600);
-  gpsPort.begin(9600);
-  sim800Port.begin(9600);
   Serial.println("Awake");
+  gpsPortActive = 0;
+  sim800PortActive = 0;
   gpsConfigured = 0;
   gpsMessageCounter = 0;
   gpsLock = 0;
@@ -219,18 +257,22 @@ void setup()
 
 void loop() {
 
+  
   if(!sim800Configured){
+    activateSim800Port();
     delay(1000);
     sim800Configure();
   }
 
+  
   if (!gpsConfigured){
+    activateGpsPort();
     delay(1000);
     gpsConfigure();
   }
     
-  
-  if(sim800Port.available()){
+  activateSim800Port();
+  if(sim800Port.available() && gpsPositionRequest==0){
     buffer=sim800Port.readString();
     
     if(buffer.startsWith("+CMTI:",2)){
@@ -254,12 +296,14 @@ void loop() {
 
   // Get GPS position
   if(gpsPositionRequest){
+    activateGpsPort();
+
     gpsAwakeCounter = 0;
     if(!gpsAwake)
       gpsWake();
 
     gpsPort.write(gpsPOSLLH_CMD,sizeof(gpsPOSLLH_CMD));
-    delay(100);
+    delay(200);
 
   
     if(!gpsPort.available()){
@@ -280,6 +324,8 @@ void loop() {
       gpsLock = 1;
       gpsMessageCounter = 0;
       gpsPositionRequest = 0;
+      activateSim800Port();
+
       sprintf(bufferArray, "%s,%f%f",googlePrefix,posllh.lat/10000000.0,posllh.lon/10000000.0);
       //sendSMS("http://maps.google.com/?q="+posllh.lat/10000000.0f+","+posllh.lon/10000000.0f+"\r\n");
       Serial.print("http://maps.google.com/?q=");Serial.print(posllh.lat/10000000.0f,8);Serial.print(",");Serial.print(posllh.lon/10000000.0f,8);Serial.println();
@@ -298,8 +344,11 @@ void loop() {
   if(gpsLock && gpsAwake)
     gpsAwakeCounter++;
 
-  if(gpsAwakeCounter > STAY_AWAKE_CYCLE)
+  if(gpsAwakeCounter > STAY_AWAKE_CYCLE){
+    activateGpsPort();
     gpsSleep();
+    activateSim800Port();
+  }
 
   
   delay(1000);
