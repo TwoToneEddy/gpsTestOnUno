@@ -31,13 +31,15 @@ B5 62 01 02 00 00 03 0A
 #include <SoftwareSerial.h>
 
 #define LOOP_DELAY  1000
-#define GPS_LOCK_MSG_LIMIT  180  
+//#define GPS_LOCK_MSG_LIMIT  180  
+#define GPS_LOCK_MSG_LIMIT  20  
 #define HORIZONTAL_ACC_THRESHOLD  10
 #define STAY_AWAKE_CYCLE 60
 
 
 // Connect the GPS RX/TX to arduino pins 3 and 5
 SoftwareSerial gpsPort = SoftwareSerial(12,13);
+SoftwareSerial sim800Port = SoftwareSerial(10,11);
 
 const unsigned char gpsConfigCommands[6][11]= {{0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x00, 0x00, 0xFA, 0x0F},
                                                {0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x01, 0x00, 0xFB, 0x11},
@@ -50,6 +52,11 @@ const unsigned char gpsWakeCommand[] = {0xB5, 0x62, 0x06, 0x57, 0x08, 0x00, 0x01
 const unsigned char gpsPOSLLH_CMD[]={0xB5, 0x62, 0x01, 0x02, 0x00, 0x00, 0x03, 0x0A};
 const unsigned char UBX_HEADER[] = { 0xB5, 0x62 };
 int gpsConfigured,gpsMessageCounter,gpsLock,gpsPositionRequest,gpsAwake,gpsAwakeCounter,gpsCommsErrorCounter;
+int sim800Configured,sim800Comms;
+String buffer;
+String locationMessage;
+char bufferArray[64];
+char googlePrefix[]="http://maps.google.com/?q=";
 
 struct NAV_POSLLH {
   unsigned char cls;
@@ -147,12 +154,60 @@ void gpsConfigure(){
   gpsConfigured = 1;
 }
 
+void sim800Configure(){
+  sim800Comms=0;
 
+  sim800Port.flush();
+    delay(1000);
+
+  while(!sim800Comms){
+    Serial.println("Configuring SIM800, sending AT command");
+    sim800Port.write("AT\r\n");
+    delay(200);
+    while(!sim800Port.available()){
+    }
+
+    sim800Comms=1;
+    Serial.println("Serial port availbe, got:");
+    buffer = sim800Port.readString();
+    Serial.println(buffer);
+      
+    // Match baud
+    sim800Port.write("AT\r\n");
+    delay(200);
+    //Put into text mode
+    sim800Port.write("AT+CMGF=1\r\n");
+    delay(200);
+    //Delete messages
+    sim800Port.write("AT+CMGD=2,4\r\n");
+    delay(200);
+    sim800Configured = 1;
+
+    sim800Port.flush();
+  }
+}
+
+void sendSMS(String msg){
+
+  Serial.println("Sending SMS...");             
+  sim800Port.print("AT+CMGF=1\r");                   //Set the module to SMS mode
+  delay(100);
+  sim800Port.print("AT+CMGS=\"+447747465192\"\r");  //Your phone number don't forget to include your country code, example +212123456789"
+  delay(500);
+  sim800Port.print(msg);       //This is the text to send to the phone number, don't make it too long or you have to modify the SoftwareSerial buffer
+  delay(500);
+  sim800Port.print((char)26);// (required according to the datasheet)
+  delay(500);
+  sim800Port.println();
+  Serial.println("Text Sent.");
+  delay(500);
+}
 
 void setup() 
 {
   Serial.begin(9600);
   gpsPort.begin(9600);
+  sim800Port.begin(9600);
   Serial.println("Awake");
   gpsConfigured = 0;
   gpsMessageCounter = 0;
@@ -164,12 +219,28 @@ void setup()
 
 void loop() {
 
+  if(!sim800Configured){
+    delay(1000);
+    sim800Configure();
+  }
+
   if (!gpsConfigured){
     delay(1000);
     gpsConfigure();
   }
     
-
+  
+  if(sim800Port.available()){
+    buffer=sim800Port.readString();
+    
+    if(buffer.startsWith("+CMTI:",2)){
+      Serial.println("Got a text message");
+      sendSMS("Got position command, waiting for lock...");
+      gpsPositionRequest = 1;
+    }
+    sim800Port.flush();
+  }
+  
   
   if(Serial.available()){
     char c = Serial.read();
@@ -188,7 +259,7 @@ void loop() {
       gpsWake();
 
     gpsPort.write(gpsPOSLLH_CMD,sizeof(gpsPOSLLH_CMD));
-    delay(200);
+    delay(100);
 
   
     if(!gpsPort.available()){
@@ -209,7 +280,11 @@ void loop() {
       gpsLock = 1;
       gpsMessageCounter = 0;
       gpsPositionRequest = 0;
+      sprintf(bufferArray, "%s,%f%f",googlePrefix,posllh.lat/10000000.0,posllh.lon/10000000.0);
+      //sendSMS("http://maps.google.com/?q="+posllh.lat/10000000.0f+","+posllh.lon/10000000.0f+"\r\n");
       Serial.print("http://maps.google.com/?q=");Serial.print(posllh.lat/10000000.0f,8);Serial.print(",");Serial.print(posllh.lon/10000000.0f,8);Serial.println();
+      Serial.println();
+      Serial.print(bufferArray);
 
       Serial.print(" hAcc: ");    Serial.print(posllh.hAcc/1000.0f);
       Serial.print(" vAcc: ");    Serial.print(posllh.vAcc/1000.0f);
