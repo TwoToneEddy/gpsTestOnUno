@@ -149,10 +149,12 @@ void gpsSleep(){
 
 // Write all configure commands
 void gpsConfigure(){
+  delay(500);
   for(int i = 0; i < sizeof(gpsConfigCommands)/sizeof(gpsConfigCommands[0]); i++)
     gpsPort.write(gpsConfigCommands[i],sizeof(gpsConfigCommands[i]));
   delay(500);
   gpsSleep();
+  gpsPort.flush();
   gpsConfigured = 1;
 }
 
@@ -227,40 +229,64 @@ void sim800Configure(){
   }
 }
 
-void sendSMS(String msg){
+void sim800Sleep(){
+  Serial.println("sim800Sleep()"); 
+  activateSim800Port();
+  sim800Port.write("AT+CSCLK=2\r\n");
+  delay(200);
+  sim800Port.flush();
+}
 
+void sim800Wake(){
+  Serial.println("sim800Wake()"); 
+  activateSim800Port();
+  sim800Port.write("AT+CSCLK=0\r\n");
+  delay(200);
+  sim800Port.write("AT+CSCLK=0\r\n");
+  delay(200);
+  sim800Port.flush();
+}
+
+void sendSMSPrefix(){
+  sim800Wake();
   Serial.println("Sending SMS...");             
   sim800Port.print("AT+CMGF=1\r");                   //Set the module to SMS mode
   delay(100);
   sim800Port.print("AT+CMGS=\"+447747465192\"\r");  //Your phone number don't forget to include your country code, example +212123456789"
+  //sim800Port.print("AT+CMGS=\"+447835006522\"\r");  //Your phone number don't forget to include your country code, example +212123456789"
+
   delay(500);
-  sim800Port.print(msg);       //This is the text to send to the phone number, don't make it too long or you have to modify the SoftwareSerial buffer
+
+}
+
+void sendSMSSuffix(){
   delay(500);
   sim800Port.print((char)26);// (required according to the datasheet)
   delay(500);
   sim800Port.println();
   Serial.println("Text Sent.");
   delay(500);
+  sim800Sleep();
+}
+
+void sendSMS(String msg){
+  sendSMSPrefix();
+  sim800Port.print(msg);       //This is the text to send to the phone number, don't make it too long or you have to modify the SoftwareSerial buffer
+  sendSMSSuffix();
 }
 
 void sendPositionSMS(){
-
-  Serial.println("Sending SMS...");             
-  sim800Port.print("AT+CMGF=1\r");                   //Set the module to SMS mode
-  delay(100);
-  sim800Port.print("AT+CMGS=\"+447747465192\"\r");  //Your phone number don't forget to include your country code, example +212123456789"
-  delay(500);
+  sendSMSPrefix();
   sim800Port.print("http://maps.google.com/?q=");
   sim800Port.print(posllh.lat/10000000.0f,8);
   sim800Port.print(",");
   sim800Port.print(posllh.lon/10000000.0f,8);
-  delay(500);
-  sim800Port.print((char)26);// (required according to the datasheet)
-  delay(500);
   sim800Port.println();
-  Serial.println("Text Sent.");
-  delay(500);
-
+  sim800Port.print(" hAcc: ");    
+  sim800Port.print(posllh.hAcc/1000.0f);
+  sim800Port.print(" vAcc: ");    
+  sim800Port.print(posllh.vAcc/1000.0f);
+  sendSMSSuffix();
 }
 
 void setup() 
@@ -282,14 +308,14 @@ void loop() {
   
   if(!sim800Configured){
     activateSim800Port();
-    delay(1000);
+    delay(100);
     sim800Configure();
+    sim800Sleep();
   }
 
-  
   if (!gpsConfigured){
     activateGpsPort();
-    delay(1000);
+    delay(100);
     gpsConfigure();
   }
     
@@ -347,12 +373,7 @@ void loop() {
       gpsMessageCounter = 0;
       gpsPositionRequest = 0;
       activateSim800Port();
-      lat_con=posllh.lat/10000000.0;
-      lon_con=posllh.lon/10000000.0;
-      lat_float=*((float*)lat_con);
-      lon_float=*((float*)lon_con);
 
-      sprintf(bufferArray, "%s %ld %ld",googlePrefix,lat_con,lon_con);
       sendPositionSMS();
       Serial.print("http://maps.google.com/?q=");Serial.print(posllh.lat/10000000.0f,8);Serial.print(",");Serial.print(posllh.lon/10000000.0f,8);Serial.println();
       Serial.println();
