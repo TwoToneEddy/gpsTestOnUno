@@ -55,6 +55,8 @@ int gpsConfigured,gpsMessageCounter,gpsLock,gpsPositionRequest,gpsAwake,gpsAwake
 int sim800Configured,sim800Comms,sim800PortActive;
 String buffer;
 String locationMessage;
+long lat_con,lon_con;
+float lat_float,lon_float;
 char bufferArray[64];
 char googlePrefix[]="http://maps.google.com/?q=";
 
@@ -241,6 +243,26 @@ void sendSMS(String msg){
   delay(500);
 }
 
+void sendPositionSMS(){
+
+  Serial.println("Sending SMS...");             
+  sim800Port.print("AT+CMGF=1\r");                   //Set the module to SMS mode
+  delay(100);
+  sim800Port.print("AT+CMGS=\"+447747465192\"\r");  //Your phone number don't forget to include your country code, example +212123456789"
+  delay(500);
+  sim800Port.print("http://maps.google.com/?q=");
+  sim800Port.print(posllh.lat/10000000.0f,8);
+  sim800Port.print(",");
+  sim800Port.print(posllh.lon/10000000.0f,8);
+  delay(500);
+  sim800Port.print((char)26);// (required according to the datasheet)
+  delay(500);
+  sim800Port.println();
+  Serial.println("Text Sent.");
+  delay(500);
+
+}
+
 void setup() 
 {
   Serial.begin(9600);
@@ -325,9 +347,13 @@ void loop() {
       gpsMessageCounter = 0;
       gpsPositionRequest = 0;
       activateSim800Port();
+      lat_con=posllh.lat/10000000.0;
+      lon_con=posllh.lon/10000000.0;
+      lat_float=*((float*)lat_con);
+      lon_float=*((float*)lon_con);
 
-      sprintf(bufferArray, "%s,%f%f",googlePrefix,posllh.lat/10000000.0,posllh.lon/10000000.0);
-      //sendSMS("http://maps.google.com/?q="+posllh.lat/10000000.0f+","+posllh.lon/10000000.0f+"\r\n");
+      sprintf(bufferArray, "%s %ld %ld",googlePrefix,lat_con,lon_con);
+      sendPositionSMS();
       Serial.print("http://maps.google.com/?q=");Serial.print(posllh.lat/10000000.0f,8);Serial.print(",");Serial.print(posllh.lon/10000000.0f,8);Serial.println();
       Serial.println();
       Serial.print(bufferArray);
