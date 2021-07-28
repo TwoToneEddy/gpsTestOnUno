@@ -38,8 +38,8 @@ B5 62 01 02 00 00 03 0A
 
 
 // Connect the GPS RX/TX to arduino pins 3 and 5
-SoftwareSerial gpsPort = SoftwareSerial(12,13);
-SoftwareSerial sim800Port = SoftwareSerial(10,11);
+SoftwareSerial gpsPort = SoftwareSerial(8,9);
+SoftwareSerial sim800Port = SoftwareSerial(6,7);
 
 const unsigned char gpsConfigCommands[6][11]= {{0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x00, 0x00, 0xFA, 0x0F},
                                                {0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x01, 0x00, 0xFB, 0x11},
